@@ -92,7 +92,11 @@ export default function CalculatorPage() {
         setRoofArea(0);
       }
     } catch {
-      setError("Failed to fetch building data. Please try again.");
+      // On OSM failure, still show the bottom panel so user can enter area manually
+      setError("Could not auto-detect building footprint. Enter your roof area manually below.");
+      setRoofArea(0);
+      // Use a placeholder feature to trigger the bottom panel
+      setSelectedBuilding({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[]] } } as Feature<Polygon>);
     } finally {
       setIsLoadingBuildings(false);
     }

@@ -4,8 +4,15 @@
 
 import type { Feature, Polygon } from "geojson";
 
+// Multiple Overpass API endpoints for fallback resilience
+const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
+
 /**
- * Fetch building footprints from OSM Overpass API
+ * Fetch building footprints from OSM Overpass API with multi-endpoint fallback
  */
 export async function fetchBuildingFootprints(
   lat: number,
@@ -23,20 +30,46 @@ export async function fetchBuildingFootprints(
     out skel qt;
   `;
 
-  const response = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: `data=${encodeURIComponent(query)}`,
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-  });
+  let lastError: Error = new Error("All Overpass endpoints failed");
 
-  if (!response.ok) {
-    throw new Error(`Overpass API error: ${response.status}`);
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: `data=${encodeURIComponent(query)}`,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        lastError = new Error(`Overpass API error: ${response.status}`);
+        continue;
+      }
+
+      const text = await response.text();
+
+      // Check if response is an HTML error page instead of JSON
+      if (text.trim().startsWith("<")) {
+        lastError = new Error("Overpass endpoint returned error page");
+        continue;
+      }
+
+      const data = JSON.parse(text);
+      return osmToGeoJSON(data);
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      continue;
+    }
   }
 
-  const data = await response.json();
-  return osmToGeoJSON(data);
+  throw lastError;
 }
 
 /**
