@@ -21,11 +21,22 @@ import {
   PANEL_DEGRADATION_RATE,
   ELECTRICITY_ESCALATION_RATE,
 } from "@/lib/calculations";
+import area from "@turf/area";
+import { polygon } from "@turf/helpers";
 import { discoms, calculateSavingsBreakdown, type DISCOM } from "@/data/tariffs";
 import ROIDashboard from "@/components/ROIDashboard";
 import AssumptionsSection from "@/components/AssumptionsSection";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
+const Map3DView = dynamic(() => import("@/components/Map3DView"), { ssr: false });
+const RoofDrawingTool = dynamic(() => import("@/components/RoofDrawingTool"), { ssr: false });
+const PanelPlacementTool = dynamic(() => import("@/components/PanelPlacementTool"), { ssr: false });
+const ShadingSimulator = dynamic(() => import("@/components/ShadingSimulator"), { ssr: false });
+const PDFExportButton = dynamic(() => import("@/components/PDFExportButton"), { ssr: false });
+import type { BaseLayer } from "@/components/MapView";
+import type { RoofPolygon } from "@/components/RoofDrawingTool";
+import type { PlacedPanel } from "@/components/PanelPlacementTool";
+import { PANEL_WATTS } from "@/components/PanelPlacementTool";
 
 interface SolarData {
   monthlyGHI: Record<string, number>;
@@ -54,10 +65,27 @@ export default function CalculatorPage() {
   const [addressName, setAddressName] = useState<string>("");
   const [areaUnit, setAreaUnit] = useState<"m2" | "sqft">("m2");
   const [consumptionScope, setConsumptionScope] = useState<"household" | "building">("household");
+  const [baseLayer, setBaseLayer] = useState<BaseLayer>("streets");
+  const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+  const [roofPolygon, setRoofPolygon] = useState<RoofPolygon | null>(null);
+  const [panels, setPanels] = useState<PlacedPanel[]>([]);
+  const [shadingFactor, setShadingFactor] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const roiChartRef = useRef<HTMLDivElement>(null);
 
-  const calculatedSystemSize = calculateSystemSize(roofArea);
-  const systemSize = systemSizeOverride ?? calculatedSystemSize;
+  const effectiveRoofArea = roofPolygon
+    ? (() => {
+        const closed = roofPolygon.length > 2 &&
+          (roofPolygon[0][0] !== roofPolygon[roofPolygon.length - 1][0] || roofPolygon[0][1] !== roofPolygon[roofPolygon.length - 1][1])
+          ? [...roofPolygon, roofPolygon[0]]
+          : roofPolygon;
+        return Math.round(area(polygon([closed])));
+      })()
+    : roofArea;
+
+  const panelSystemSize = panels.length > 0 ? (panels.length * PANEL_WATTS) / 1000 : null;
+  const calculatedSystemSize = calculateSystemSize(effectiveRoofArea);
+  const systemSize = systemSizeOverride ?? panelSystemSize ?? calculatedSystemSize;
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
@@ -85,6 +113,9 @@ export default function CalculatorPage() {
     setError(null);
     setBuildingFootprints([]);
     setSelectedBuilding(null);
+    setViewMode("2d");
+    setRoofPolygon(null);
+    setPanels([]);
 
     try {
       const footprints = await fetchBuildingFootprints(lat, lon);
@@ -113,9 +144,11 @@ export default function CalculatorPage() {
 
   const handleBuildingSelect = useCallback(async (feature: Feature<Polygon>) => {
     setSelectedBuilding(feature);
+    setRoofPolygon(null);
+    setPanels([]);
     const turfArea = (await import("@turf/area")).default;
-    const area = turfArea(feature);
-    setRoofArea(Math.round(area));
+    const a = turfArea(feature);
+    setRoofArea(Math.round(a));
   }, []);
 
   const handleProceedToConfigure = useCallback(async () => {
@@ -199,6 +232,55 @@ export default function CalculatorPage() {
       {/* Step 1: Map */}
       {step === "map" && (
         <div className="relative flex flex-col" style={{ height: "calc(100vh - 120px)" }}>
+          {viewMode === "3d" && selectedBuilding ? (
+            <div className="flex flex-1 flex-col overflow-auto lg:flex-row">
+              <div className="h-64 flex-shrink-0 lg:h-auto lg:w-1/2">
+                <Map3DView
+                  building={selectedBuilding}
+                  roofPolygon={roofPolygon}
+                  panels={panels}
+                />
+              </div>
+              <div className="flex-1 space-y-4 overflow-auto p-4 lg:w-1/2">
+                <RoofDrawingTool
+                  building={selectedBuilding}
+                  roofPolygon={roofPolygon}
+                  onRoofChange={setRoofPolygon}
+                  areaUnit={areaUnit}
+                />
+                <PanelPlacementTool
+                  building={selectedBuilding}
+                  roofPolygon={roofPolygon}
+                  panels={panels}
+                  onPanelsChange={setPanels}
+                />
+                {selectedLocation && (
+                  <ShadingSimulator
+                    lat={selectedLocation.lat}
+                    lon={selectedLocation.lon}
+                    onShadingFactorChange={setShadingFactor}
+                  />
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("2d")}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    Back to Map
+                  </button>
+                  <button
+                    onClick={handleProceedToConfigure}
+                    disabled={effectiveRoofArea === 0 || isLoadingSolar}
+                    className="flex-1 rounded-lg bg-gradient-to-r from-accent-blue-500 via-indigo-500 to-energy-500 py-3 font-semibold text-white transition opacity-90 hover:opacity-100 disabled:opacity-50"
+                  >
+                    {isLoadingSolar ? "Fetching Solar Data..." : "Get Solar Estimate →"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
           {/* Search bar */}
           <div className="absolute top-4 left-4 right-4 z-10 mx-auto max-w-xl">
             <div className="flex overflow-hidden rounded-xl bg-white shadow-lg">
@@ -245,6 +327,8 @@ export default function CalculatorPage() {
               onMapClick={handleMapClick}
               onBuildingSelect={handleBuildingSelect}
               isLoading={isLoadingBuildings}
+              baseLayer={baseLayer}
+              onBaseLayerChange={setBaseLayer}
             />
           </div>
 
@@ -262,7 +346,7 @@ export default function CalculatorPage() {
                   <div className="text-right">
                     <div className="flex items-center gap-2">
                       <div className="text-2xl font-bold gradient-text">
-                        {areaUnit === "m2" ? roofArea : Math.round(roofArea * SQFT_PER_SQ_M)}
+                        {areaUnit === "m2" ? effectiveRoofArea : Math.round(effectiveRoofArea * SQFT_PER_SQ_M)}
                         {areaUnit === "m2" ? " m²" : " sq ft"}
                       </div>
                       <div className="flex rounded-lg border border-gray-200 p-0.5">
@@ -285,6 +369,15 @@ export default function CalculatorPage() {
                     <div className="text-xs text-gray-500">Estimated roof area</div>
                   </div>
                 </div>
+                {selectedBuilding && selectedBuilding.geometry.coordinates[0]?.length >= 4 && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("3d")}
+                    className="mb-3 w-full rounded-lg border border-accent-blue-300 bg-accent-blue-50 py-2 text-sm font-medium text-accent-blue-700 hover:bg-accent-blue-100"
+                  >
+                    Switch to 3D Design (draw roof, place panels)
+                  </button>
+                )}
                 {roofArea === 0 && (
                   <div className="mb-3">
                     <label className="mb-1 block text-xs font-medium text-gray-600">
@@ -324,7 +417,7 @@ export default function CalculatorPage() {
                 )}
                 <button
                   onClick={handleProceedToConfigure}
-                  disabled={roofArea === 0 || isLoadingSolar}
+                  disabled={effectiveRoofArea === 0 || isLoadingSolar}
                   className="w-full rounded-lg bg-gradient-to-r from-accent-blue-500 via-indigo-500 to-energy-500 py-3 font-semibold text-white transition opacity-90 hover:opacity-100 disabled:opacity-50"
                 >
                   {isLoadingSolar ? "Fetching Solar Data..." : "Get Solar Estimate →"}
@@ -352,6 +445,8 @@ export default function CalculatorPage() {
                 <span className="text-sm text-gray-600">Detecting building footprint...</span>
               </div>
             </div>
+          )}
+            </>
           )}
         </div>
       )}
@@ -390,7 +485,9 @@ export default function CalculatorPage() {
                 <span className="text-sm text-gray-500">kW</span>
               </div>
               <p className="mb-3 text-xs text-gray-500">
-                Based on {roofArea} m² ({Math.round(roofArea * SQFT_PER_SQ_M).toLocaleString()} sq ft) roof &times; 80% usable &divide; 10 m²/kW = {calculatedSystemSize} kW
+                {panelSystemSize != null
+                  ? `Based on ${panels.length} panels × ${PANEL_WATTS}W = ${panelSystemSize.toFixed(1)} kW`
+                  : `Based on ${effectiveRoofArea} m² (${Math.round(effectiveRoofArea * SQFT_PER_SQ_M).toLocaleString()} sq ft) roof × 80% usable ÷ 10 m²/kW = ${calculatedSystemSize} kW`}
               </p>
               <label className="mb-1 block text-xs font-medium text-gray-600">
                 Adjust system size (kW)
@@ -659,7 +756,9 @@ export default function CalculatorPage() {
           </div>
 
           {/* ROI Charts */}
-          <ROIDashboard yearlyData={yearlyData} netCost={netCost.average} />
+          <div ref={roiChartRef}>
+            <ROIDashboard yearlyData={yearlyData} netCost={netCost.average} />
+          </div>
 
           {/* Assumptions & Methodology */}
           <div className="mt-8">
@@ -680,7 +779,33 @@ export default function CalculatorPage() {
             <p className="mb-4 text-sm text-accent-blue-600">
               Share this analysis with your family or on social media
             </p>
-            <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
+              <PDFExportButton
+                data={{
+                  address: addressName || undefined,
+                  lat: selectedLocation?.lat ?? 0,
+                  lon: selectedLocation?.lon ?? 0,
+                  roofArea: effectiveRoofArea,
+                  systemSize,
+                  panelCount: panels.length > 0 ? panels.length : undefined,
+                  annualGeneration,
+                  annualGHI,
+                  subsidy,
+                  systemCostLow: systemCost.low,
+                  systemCostHigh: systemCost.high,
+                  netCostLow: netCost.low,
+                  netCostHigh: netCost.high,
+                  annualSavings,
+                  paybackPeriod,
+                  savings10Year,
+                  savings25Year,
+                  discomName: selectedDiscom.name,
+                  discomState: selectedDiscom.state,
+                  monthlyConsumption,
+                  consumptionScope,
+                }}
+                chartRef={roiChartRef}
+              />
               <button
                 onClick={() => {
                   const url = `${window.location.origin}/results?${shareableParams.toString()}`;

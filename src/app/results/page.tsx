@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import {
@@ -20,10 +21,14 @@ import {
   ELECTRICITY_ESCALATION_RATE,
 } from "@/lib/calculations";
 import { discoms, calculateSavingsBreakdown } from "@/data/tariffs";
+import dynamic from "next/dynamic";
 import ROIDashboard from "@/components/ROIDashboard";
 import AssumptionsSection from "@/components/AssumptionsSection";
 
+const PDFExportButton = dynamic(() => import("@/components/PDFExportButton"), { ssr: false });
+
 function ResultsContent() {
+  const roiChartRef = useRef<HTMLDivElement>(null);
   const searchParams = useSearchParams();
 
   const lat = parseFloat(searchParams.get("lat") || "12.9716");
@@ -188,7 +193,41 @@ function ResultsContent() {
       </div>
 
       {/* ROI Charts */}
-      <ROIDashboard yearlyData={yearlyData} netCost={netCost.average} />
+      <div ref={roiChartRef}>
+        <ROIDashboard yearlyData={yearlyData} netCost={netCost.average} />
+      </div>
+
+      {/* Share & PDF */}
+      <div className="mt-8 rounded-xl border border-accent-blue-200 bg-accent-blue-50 p-6 text-center">
+        <h3 className="mb-2 text-lg font-bold text-accent-blue-800">Download Your Proposal</h3>
+        <p className="mb-4 text-sm text-accent-blue-600">
+          Save a PDF copy to share with installers or for your records
+        </p>
+        <PDFExportButton
+          data={{
+            lat,
+            lon,
+            roofArea,
+            systemSize,
+            annualGeneration,
+            annualGHI,
+            subsidy,
+            systemCostLow: systemCost.low,
+            systemCostHigh: systemCost.high,
+            netCostLow: netCost.low,
+            netCostHigh: netCost.high,
+            annualSavings,
+            paybackPeriod,
+            savings10Year,
+            savings25Year,
+            discomName: selectedDiscom.name,
+            discomState: selectedDiscom.state,
+            monthlyConsumption,
+            consumptionScope,
+          }}
+          chartRef={roiChartRef}
+        />
+      </div>
 
       {/* Assumptions & Methodology */}
       <AssumptionsSection
