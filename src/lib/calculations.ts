@@ -6,6 +6,7 @@
 // Constants
 export const USABLE_ROOF_FRACTION = 0.8; // 80% of roof area is usable
 export const SQ_M_PER_KW = 10; // 10 sq.m per kW of panels
+export const SQFT_PER_SQ_M = 10.764; // 1 m² = 10.764 sq ft
 export const PERFORMANCE_RATIO = 0.75; // System performance ratio (accounts for losses, shading, etc.)
 export const COST_PER_KW_LOW = 50000; // ₹50,000 per kW installed (low estimate)
 export const COST_PER_KW_HIGH = 60000; // ₹60,000 per kW installed (high estimate)

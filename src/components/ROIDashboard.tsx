@@ -56,8 +56,9 @@ export default function ROIDashboard({ yearlyData, netCost }: ROIDashboardProps)
             <AreaChart data={yearlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
+                  <stop offset="50%" stopColor="#6366f1" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -94,7 +95,7 @@ export default function ROIDashboard({ yearlyData, netCost }: ROIDashboardProps)
                 type="monotone"
                 dataKey="cumulative"
                 name="Cumulative Savings"
-                stroke="#f59e0b"
+                stroke="#3b82f6"
                 strokeWidth={2}
                 fill="url(#colorCumulative)"
               />
@@ -131,7 +132,7 @@ export default function ROIDashboard({ yearlyData, netCost }: ROIDashboardProps)
               <Bar
                 dataKey="savings"
                 name="Annual Savings"
-                fill="#f97316"
+                fill="#6366f1"
                 radius={[4, 4, 0, 0]}
               />
             </BarChart>
